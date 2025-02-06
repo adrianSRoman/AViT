@@ -9,6 +9,8 @@ from typing import List, Tuple, Optional
 
 from util.utils import load_output_format_file, convert_output_format_polar_to_cartesian, get_adpit_labels_for_file
 
+from dataset.features import FeatureClass
+
 class Dataset(data.Dataset):
     def __init__(self,
                  dataset,
@@ -52,10 +54,21 @@ class Dataset(data.Dataset):
         self.mode = mode
         # TODO: Parametrize the variables below
         self.dataset_type = "foa"
+        self.fs = 24000
         self.n_fft = 256
-        self.hop_length = 256
-        self.sample_rate = 24000
+        self._hop_len_s = 0.02
+        self.hop_length = int(self.fs * self._hop_len_s)
+        self.win_len = 2 * self.hop_length
+        self.n_fft = self.next_pow2(self.win_len)
+        self.nb_mel_bins = 64
         self.normalize_audio = False
+
+        self.feat_extractor = FeatureClass(self.fs, self.n_fft, self.nb_mel_bins)
+
+
+    @staticmethod
+    def next_pow2(x):
+        return 2 ** (x - 1).bit_length()
 
 
     def load_adpit_labels(self, label_filepath, total_label_frames, n_classes=13, seq_len=50):
@@ -73,8 +86,8 @@ class Dataset(data.Dataset):
         waveform, sr = torchaudio.load(audio_path)
         
         # Resample if necessary
-        if sr != self.sample_rate:
-            resampler = torchaudio.transforms.Resample(sr, self.sample_rate)
+        if sr != self.fs:
+            resampler = torchaudio.transforms.Resample(sr, self.fs)
             waveform = resampler(waveform)
         
         # Ensure 4 channels
@@ -117,7 +130,7 @@ class Dataset(data.Dataset):
          
         # Load and preprocess audio
         waveform, sr = self.load_and_preprocess_audio(audio_path)
-        total_label_frames = int(waveform.shape[1] / (self.sample_rate * self.labels_step))
+        total_label_frames = int(waveform.shape[1] / (self.fs * self.labels_step))
         label = self.load_adpit_labels(label_path, total_label_frames)
 
         label = 0
