@@ -7,7 +7,6 @@ from torch.utils import data
 from pathlib import Path
 from typing import List, Tuple, Optional
 
-
 from util.utils import load_output_format_file, convert_output_format_polar_to_cartesian, get_adpit_labels_for_file
 
 class Dataset(data.Dataset):
@@ -16,7 +15,7 @@ class Dataset(data.Dataset):
                  labels_path,
                  limit=None,
                  offset=0,
-                 sample_length=256,
+                 sample_length=12000,
                  mode="train"):
         """Construct dataset for training and validation.
         Args:
@@ -47,21 +46,23 @@ class Dataset(data.Dataset):
         assert mode in ("train", "validation"), "Mode must be one of 'train' or 'validation'."
 
         self.length = len(dataset_list)
+        self.labels_step = 0.1
         self.dataset_list = dataset_list
         self.sample_length = sample_length
         self.mode = mode
         # TODO: Parametrize the variables below
+        self.dataset_type = "foa"
         self.n_fft = 256
         self.hop_length = 256
         self.sample_rate = 24000
         self.normalize_audio = False
 
 
-    def load_adpit_labels(self, label_filepath, start_idx=1, seq_len=50):
+    def load_adpit_labels(self, label_filepath, total_label_frames, n_classes=13, seq_len=50):
         """Loads adpit labels"""
         desc_file_polar = load_output_format_file(label_filepath)
         desc_file = convert_output_format_polar_to_cartesian(desc_file_polar)
-        label_mat = get_adpit_labels_for_file(desc_file, nb_label_frames)
+        label_mat = get_adpit_labels_for_file(desc_file, total_label_frames, n_classes)
         # TODO: here we need to index only the labels we need
         return label_mat
 
@@ -84,7 +85,7 @@ class Dataset(data.Dataset):
         if self.normalize_audio:
             waveform = waveform / (torch.max(torch.abs(waveform)) + 1e-8)
         
-        return waveform, self.sample_rate
+        return waveform, sr
     
     def compute_stft_features(self, waveform: torch.Tensor, start_idx: int) -> torch.Tensor:
         """Compute STFT features for a segment of audio."""
@@ -111,18 +112,16 @@ class Dataset(data.Dataset):
         filename = os.path.splitext(os.path.basename(audio_path))[0]
         data_src = os.path.basename(os.path.dirname(audio_path))
 
-        # TODO: improve this way of handling the file name
+        # TODO: improve this way of handling the file name, better make the txt file contain .wav .csv
         label_path = os.path.join(self.labels_path, data_src, f"{filename}.csv")
          
-        label = self.load_adpit_labels(label_path)
-
-        print("label shape", label.shape)
+        # Load and preprocess audio
+        waveform, sr = self.load_and_preprocess_audio(audio_path)
+        total_label_frames = int(waveform.shape[1] / (self.sample_rate * self.labels_step))
+        label = self.load_adpit_labels(label_path, total_label_frames)
 
         label = 0
         
-        # Load and preprocess audio
-        waveform, _ = self.load_and_preprocess_audio(audio_path)
-
         # Compute STFT features
         max_start = waveform.shape[1] - self.sample_length
         start_idx = torch.randint(0, max(1, max_start), (1,)).item()
