@@ -21,9 +21,9 @@ def main(config, resume):
         pin_memory=config["train_dataloader"]["pin_memory"]
     )
     
-    wandb.init(project="SELDGCNN", 
-        config=config
-    )
+    #wandb.init(project="SELDGCNN", 
+    #    config=config
+    #)
 
     valid_dataloader = DataLoader(
         dataset=initialize_config(config["validation_dataset"]),
@@ -32,8 +32,6 @@ def main(config, resume):
     )
 
     model = initialize_config(config["model"])
-
-
 
     optimizer = torch.optim.Adam(
         params=model.parameters(),

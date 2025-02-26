@@ -55,15 +55,14 @@ class Dataset(data.Dataset):
         # TODO: Parametrize the variables below
         self.dataset_type = "foa"
         self.fs = 24000
-        self.n_fft = 256
-        self._hop_len_s = 0.02
-        self.hop_length = int(self.fs * self._hop_len_s)
+        self.hop_len_s = 0.02
+        self.hop_length = int(self.fs * self.hop_len_s)
         self.win_len = 2 * self.hop_length
         self.n_fft = self.next_pow2(self.win_len)
         self.nb_mel_bins = 64
         self.normalize_audio = False
 
-        self.feat_extractor = FeatureClass(self.fs, self.n_fft, self.nb_mel_bins)
+        self.feats = FeatureClass(self.fs, self.n_fft, self.hop_length, self.win_len, self.nb_mel_bins)
 
 
     @staticmethod
@@ -131,7 +130,12 @@ class Dataset(data.Dataset):
         # Load and preprocess audio
         waveform, sr = self.load_and_preprocess_audio(audio_path)
         total_label_frames = int(waveform.shape[1] / (self.fs * self.labels_step))
+        total_feats_frames = int(waveform.shape[1] / self.hop_length)
         label = self.load_adpit_labels(label_path, total_label_frames)
+
+        seld_feats = self.feats._extract_features(waveform, total_feats_frames)
+
+        print("shape of gcc features", seld_feats.shape)
 
         label = 0
         
