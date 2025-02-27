@@ -140,12 +140,8 @@ class Dataset(data.Dataset):
         return self.length
 
     def __getitem__(self, item):
-        audio_path = str(self.dataset_list[item][0]) # get .wav path
-        filename = os.path.splitext(os.path.basename(audio_path))[0]
-        data_src = os.path.basename(os.path.dirname(audio_path))
-
-        # TODO: improve this way of handling the file name, better make the txt file contain .wav .csv
-        label_path = str(self.dataset_list[item][1]) # get .csv path
+        audio_path = self.dataset_list[item][0] # get .wav path
+        label_path = self.dataset_list[item][1] # get .csv path
          
         # Load and preprocess audio
         waveform, sr = self.load_and_preprocess_audio(audio_path)
