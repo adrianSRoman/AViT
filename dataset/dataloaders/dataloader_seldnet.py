@@ -48,7 +48,7 @@ class Dataset(data.Dataset):
         assert mode in ("train", "validation"), "Mode must be one of 'train' or 'validation'."
 
         self.length = len(dataset_list)
-        self.labels_step = 0.1
+        self.labels_hop_len_s = 0.1
         self.dataset_list = dataset_list
         self.sample_length = sample_length
         self.mode = mode
@@ -60,7 +60,8 @@ class Dataset(data.Dataset):
         self.win_len = 2 * self.hop_length
         self.n_fft = self.next_pow2(self.win_len)
         self.nb_mel_bins = 64
-        self.seq_len = 50 # 5 seconds sequence length
+        self.label_seq_len = 50 # 5 seconds sequence length
+        self.feat_seq_len = self.label_seq_len * int(self.labels_hop_len_s // self.hop_len_s)
         self.normalize_audio = False
 
         self.feats = FeatureClass(self.fs, self.n_fft, self.hop_length, self.win_len, self.nb_mel_bins)
@@ -77,7 +78,7 @@ class Dataset(data.Dataset):
         desc_file = convert_output_format_polar_to_cartesian(desc_file_polar)
         label_mat = get_adpit_labels_for_file(desc_file, total_label_frames, n_classes)
         # TODO: here we need to index only the labels we need
-        return label_mat
+        return torch.tensor(label_mat)
 
  
     def load_and_preprocess_audio(self, audio_path) -> Tuple[torch.Tensor, int]:
@@ -100,6 +101,7 @@ class Dataset(data.Dataset):
         
         return waveform, sr
     
+
     def compute_stft_features(self, waveform: torch.Tensor, start_idx: int) -> torch.Tensor:
         """Compute STFT features for a segment of audio."""
         # Extract segment
@@ -117,24 +119,58 @@ class Dataset(data.Dataset):
         # Shape: (4, freq_bins, time_frames)
         return phs_spec
 
-    def _split_in_seqs(self, data):
-        if data.shape[0] % self.seq_len:
-            data = data[:-(data.shape[0] % self.seq_len), :]
-        data = data.reshape((data.shape[0] // self.seq_len, self.seq_len, data.shape[1]))
+    def split_in_seqs(self, data, _seq_len):
+        if len(data.shape) == 1:
+            if data.shape[0] % _seq_len:
+                data = data[:-(data.shape[0] % _seq_len), :]
+            data = data.reshape((data.shape[0] // _seq_len, _seq_len, 1))
+        elif len(data.shape) == 2:
+            if data.shape[0] % _seq_len:
+                data = data[:-(data.shape[0] % _seq_len), :]
+            data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1]))
+        elif len(data.shape) == 3:
+            if data.shape[0] % _seq_len:
+                data = data[:-(data.shape[0] % _seq_len), :, :]
+            data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1], data.shape[2]))
+        elif len(data.shape) == 4:  # for multi-ACCDOA with ADPIT
+            if data.shape[0] % _seq_len:
+                data = data[:-(data.shape[0] % _seq_len), :, :, :]
+            data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1], data.shape[2], data.shape[3]))
+        else:
+            print('ERROR: Unknown data dimensions: {}'.format(data.shape))
+            exit()
         return data
 
-    def collate_fn(batch):
+    def collate_fn(self, batch):
         features, labels = zip(*batch)
-    
-        # Concatenate all features and labels from the batch
-        all_features = np.vstack(features)
-        all_labels = np.vstack(labels)
-    
+
+        # Concatenate all features and labels into tensors
+        features = torch.cat([f for f in features], dim=0)
+        labels = torch.cat([l for l in labels], dim=0)
+
         # Split into sequences
-        feature_sequences = split_in_seqs(all_features)
-        label_sequences = split_in_seqs(all_labels)
-    
-        return torch.tensor(feature_sequences), torch.tensor(label_sequences)
+        feature_seqs = self.split_in_seqs(features, self.feat_seq_len)
+        label_seqs = self.split_in_seqs(labels, self.label_seq_len)
+
+        print("feature seqs", feature_seqs.shape, label_seqs.shape)
+
+        return feature_seqs, label_seqs
+
+#    def collate_fn(self, batch):
+#        features, labels = zip(*batch)
+#
+#        # Split into sequences
+#        feature_seqs = self.split_in_seqs(features, self.feat_seq_len)
+#        label_seqs = self.split_in_seqs(labels, self.label_seq_len)
+#
+#        print("feature seqs", feature_seqs.shape, label_seqs.shape)
+#
+#        # Concatenate all features and labels from the batch
+#        feature_sequences = torch.stack(feature_seqs)
+#        label_sequences = torch.stack(label_seqs)
+#
+#        return feature_sequences, label_sequences
+
 
     def __len__(self):
         return self.length
@@ -145,7 +181,7 @@ class Dataset(data.Dataset):
          
         # Load and preprocess audio
         waveform, sr = self.load_and_preprocess_audio(audio_path)
-        total_label_frames = int(waveform.shape[1] / (self.fs * self.labels_step))
+        total_label_frames = int(waveform.shape[1] / (self.fs * self.labels_hop_len_s))
         total_feats_frames = int(waveform.shape[1] / self.hop_length)
         seld_label = self.load_adpit_labels(label_path, total_label_frames)
         seld_feats = self.feats._extract_features(waveform, total_feats_frames)
