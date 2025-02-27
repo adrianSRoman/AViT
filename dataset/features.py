@@ -43,7 +43,7 @@ class FeatureClass:
             # Only keep the first `_nb_frames`
             stft_ch = stft_ch[:, :_nb_frames]
             spectra.append(stft_ch)
-        return torch.stack(spectra).T # time, frequency, channels
+        return torch.stack(spectra, dim=-1).transpose(0, 1) # time, frequency, channels
 
     def _get_mel_spectrogram(self, linear_spectra):
         """
@@ -63,15 +63,11 @@ class FeatureClass:
         for ch_cnt in range(nb_channels):
             # Calculate magnitude spectrogram
             mag_spectra = torch.abs(linear_spectra[:, :, ch_cnt])**2
-        
             # Apply mel filterbank
             mel_spectra = torch.matmul(mag_spectra, self.mel_wts)
-        
             # Convert to dB scale (librosa.power_to_db equivalent)
             log_mel_spectra = 10.0 * torch.log10(torch.clamp(mel_spectra, min=1e-10))
-        
             mel_feat[:, :, ch_cnt] = log_mel_spectra
-    
         # Reshape to [frames, channels*mel_bins]
         mel_feat = mel_feat.transpose(1, 2).reshape(batch_size, -1)
     
@@ -97,7 +93,6 @@ class FeatureClass:
             return math.factorial(n) // (math.factorial(r) * math.factorial(n-r))
     
         gcc_channels = nCr(nb_channels, 2)
-    
         # Initialize output tensor
         gcc_feat = torch.zeros((batch_size, self.nb_mel_bins, gcc_channels), device=linear_spectra.device)
     
@@ -106,17 +101,13 @@ class FeatureClass:
             for n in range(m+1, nb_channels):
                 # Calculate cross-spectrum
                 R = torch.conj(linear_spectra[:, :, m]) * linear_spectra[:, :, n]
-            
                 # Normalize and compute inverse FFT
                 cc = torch.fft.irfft(torch.exp(1j * torch.angle(R)))
-            
                 # Rearrange to center the features
                 half_bins = self.nb_mel_bins // 2
                 cc = torch.cat([cc[:, -half_bins:], cc[:, :half_bins]], dim=-1)
-            
                 gcc_feat[:, :, cnt] = cc
                 cnt += 1
-    
         # Reshape to [frames, channels_combinations*mel_bins]
         return gcc_feat.transpose(1, 2).reshape(batch_size, -1)
 
