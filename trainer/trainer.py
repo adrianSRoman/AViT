@@ -27,12 +27,12 @@ class Trainer(BaseTrainer):
     def _train_epoch(self, epoch):
         loss_total = 0.0
 
-        for i, (stft_feats, label) in enumerate(self.train_data_loader):
+        for i, (feats, label) in enumerate(self.train_data_loader):
             label = label.to(self.device)
-            stft_feats = stft_feats.to(self.device)
-            stft_feats = stft_feats.unsqueeze(1)
+            feats = feats.to(self.device)
+            print("shapes of inputs and labels", label.shape, feats.shape)
             self.optimizer.zero_grad()
-            pred = self.model(stft_feats)
+            pred = self.model(feats)
             loss = self.loss_function(pred, label)
             loss.backward()
             self.optimizer.step()
@@ -46,14 +46,12 @@ class Trainer(BaseTrainer):
     def _validation_epoch(self, epoch):
         loss_total = 0.0
 
-        for i, (stft_feats, label) in enumerate(self.validation_data_loader):
+        for i, (feats, label) in enumerate(self.validation_data_loader):
             label = label.to(self.device)
-            stft_feats = stft_feats.to(self.device)
+            feats = feats.to(self.device)
             self.optimizer.zero_grad()
-            pred = self.model(stft_feats)
+            pred = self.model(feats)
             loss = self.loss_function(pred, label)
-            # loss.backward()
-            # self.optimizer.step()
 
             loss_total += loss.item()
 

@@ -12,23 +12,27 @@ from util.utils import initialize_config
 def main(config, resume):
     torch.manual_seed(config["seed"])  # for both CPU and GPU
     np.random.seed(config["seed"])
-
+    
+    dataset_train = initialize_config(config["train_dataset"])
     train_dataloader = DataLoader(
-        dataset=initialize_config(config["train_dataset"]),
+        dataset=dataset_train,
         batch_size=config["train_dataloader"]["batch_size"],
         num_workers=config["train_dataloader"]["num_workers"],
         shuffle=config["train_dataloader"]["shuffle"],
-        pin_memory=config["train_dataloader"]["pin_memory"]
+        pin_memory=config["train_dataloader"]["pin_memory"],
+        collate_fn=dataset_train.collate_fn,
     )
     
     #wandb.init(project="SELDGCNN", 
     #    config=config
     #)
 
+    dataset_val = initialize_config(config["validation_dataset"])
     valid_dataloader = DataLoader(
         dataset=initialize_config(config["validation_dataset"]),
         num_workers=1,
-        batch_size=1
+        batch_size=1,
+        collate_fn=dataset_val.collate_fn,
     )
 
     model = initialize_config(config["model"])
@@ -50,7 +54,7 @@ def main(config, resume):
         loss_function=loss_function,
         optimizer=optimizer,
         train_dataloader=train_dataloader,
-        validation_dataloader=valid_dataloader
+        validation_dataloader=valid_dataloader,
     )
 
     trainer.train()
