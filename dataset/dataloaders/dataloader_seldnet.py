@@ -9,7 +9,7 @@ from typing import List, Tuple, Optional
 
 from util.utils import load_output_format_file, convert_output_format_polar_to_cartesian, get_adpit_labels_for_file
 
-from dataset.features import FeatureClass
+from dataset.features import FeatureClass 
 
 class Dataset(data.Dataset):
     def __init__(self,
@@ -37,7 +37,7 @@ class Dataset(data.Dataset):
             (multi-channel phase stft, one-hot DoA labels)
         """
         super(Dataset, self).__init__()
-        dataset_list = [line.rstrip('\n') for line in open(os.path.abspath(os.path.expanduser(dataset)), "r")]
+        dataset_list = [line.rstrip('\n').split(" ") for line in open(os.path.abspath(os.path.expanduser(dataset)), "r")]
 
         dataset_list = dataset_list[offset:]
         if limit:
@@ -60,6 +60,7 @@ class Dataset(data.Dataset):
         self.win_len = 2 * self.hop_length
         self.n_fft = self.next_pow2(self.win_len)
         self.nb_mel_bins = 64
+        self.seq_len = 50 # 5 seconds sequence length
         self.normalize_audio = False
 
         self.feats = FeatureClass(self.fs, self.n_fft, self.hop_length, self.win_len, self.nb_mel_bins)
@@ -116,34 +117,43 @@ class Dataset(data.Dataset):
         # Shape: (4, freq_bins, time_frames)
         return phs_spec
 
+    def _split_in_seqs(self, data):
+        if data.shape[0] % self.seq_len:
+            data = data[:-(data.shape[0] % self.seq_len), :]
+        data = data.reshape((data.shape[0] // self.seq_len, self.seq_len, data.shape[1]))
+        return data
+
+    def collate_fn(batch):
+        features, labels = zip(*batch)
+    
+        # Concatenate all features and labels from the batch
+        all_features = np.vstack(features)
+        all_labels = np.vstack(labels)
+    
+        # Split into sequences
+        feature_sequences = split_in_seqs(all_features)
+        label_sequences = split_in_seqs(all_labels)
+    
+        return torch.tensor(feature_sequences), torch.tensor(label_sequences)
+
     def __len__(self):
         return self.length
 
     def __getitem__(self, item):
-        audio_path = self.dataset_list[item]
+        audio_path = str(self.dataset_list[item][0]) # get .wav path
         filename = os.path.splitext(os.path.basename(audio_path))[0]
         data_src = os.path.basename(os.path.dirname(audio_path))
 
         # TODO: improve this way of handling the file name, better make the txt file contain .wav .csv
-        label_path = os.path.join(self.labels_path, data_src, f"{filename}.csv")
+        label_path = str(self.dataset_list[item][1]) # get .csv path
          
         # Load and preprocess audio
         waveform, sr = self.load_and_preprocess_audio(audio_path)
         total_label_frames = int(waveform.shape[1] / (self.fs * self.labels_step))
         total_feats_frames = int(waveform.shape[1] / self.hop_length)
-        label = self.load_adpit_labels(label_path, total_label_frames)
-
+        seld_label = self.load_adpit_labels(label_path, total_label_frames)
         seld_feats = self.feats._extract_features(waveform, total_feats_frames)
 
-        print("shape of gcc features", seld_feats.shape)
-
-        label = 0
-        
-        # Compute STFT features
-        max_start = waveform.shape[1] - self.sample_length
-        start_idx = torch.randint(0, max(1, max_start), (1,)).item()
-        stft_features = self.compute_stft_features(waveform, start_idx)
-
         # The input of model should be fixed-length in the training.
-        return stft_features[:, :, 0], label
+        return seld_feats, seld_label
 
