@@ -226,3 +226,4 @@ def get_adpit_labels_for_file(_desc_file, total_label_frames, _nb_unique_classes
 
         label_mat = np.stack((se_label, x_label, y_label, z_label), axis=2)  # [nb_frames, 6, 4(=act+XYZ), max_classes]
         return label_mat
+
