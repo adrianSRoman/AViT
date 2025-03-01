@@ -1,8 +1,8 @@
+import torch
 import librosa
+import numpy as np
 import librosa.display
 import matplotlib.pyplot as plt
-import numpy as np
-import torch
 
 from trainer.base_trainer import BaseTrainer
 plt.switch_backend('agg')
@@ -28,9 +28,8 @@ class Trainer(BaseTrainer):
         loss_total = 0.0
 
         for i, (feats, label) in enumerate(self.train_data_loader):
-            label = label.to(self.device)
-            feats = feats.to(self.device)
-            print("shapes of inputs and labels", label.shape, feats.shape)
+            label = label.to(self.device, dtype=torch.float32, non_blocking=True)
+            feats = feats.to(self.device, dtype=torch.float32, non_blocking=True)
             self.optimizer.zero_grad()
             pred = self.model(feats)
             loss = self.loss_function(pred, label)
@@ -40,6 +39,7 @@ class Trainer(BaseTrainer):
             loss_total += loss.item()
 
         dl_len = len(self.train_data_loader)
+        print("Loss train", loss_total / dl_len)
         wandb.log({"Loss/train": loss_total / dl_len}, step=epoch)
 
     @torch.no_grad()
@@ -47,14 +47,17 @@ class Trainer(BaseTrainer):
         loss_total = 0.0
 
         for i, (feats, label) in enumerate(self.validation_data_loader):
-            label = label.to(self.device)
-            feats = feats.to(self.device)
+            label = label.to(self.device, dtype=torch.float32, non_blocking=True)
+            feats = feats.to(self.device, dtype=torch.float32, non_blocking=True)
             self.optimizer.zero_grad()
             pred = self.model(feats)
             loss = self.loss_function(pred, label)
 
             loss_total += loss.item()
 
-        dl_len = len(self.train_data_loader)
-        wandb.log({"Loss/val": loss_total / dl_len}, step=epoch)
-
+        dl_len = len(self.validation_data_loader)
+        val_loss_avg = loss_total / dl_len
+        print("Loss validation", val_loss_avg)
+        wandb.log({"Loss/val": val_loss_avg}, step=epoch)
+        
+        return val_loss_avg
