@@ -23,9 +23,9 @@ def main(config, resume):
         collate_fn=dataset_train.collate_fn,
     )
     
-    #wandb.init(project="SELDGCNN", 
-    #    config=config
-    #)
+    wandb.init(project="SELDGCNN", 
+        config=config
+    )
 
     dataset_val = initialize_config(config["validation_dataset"])
     valid_dataloader = DataLoader(
