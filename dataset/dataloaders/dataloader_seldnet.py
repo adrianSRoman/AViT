@@ -154,7 +154,7 @@ class Dataset(data.Dataset):
         return data
 
     def collate_fn(self, batch):
-        features, labels = zip(*batch)
+        features, labels, names = zip(*batch)
 
         # Concatenate all features and labels into tensors
         features = torch.cat([f for f in features], dim=0)
@@ -166,7 +166,7 @@ class Dataset(data.Dataset):
         
         feature_seqs = feature_seqs.permute(0, 2, 1, 3)
 
-        return feature_seqs, label_seqs
+        return feature_seqs, label_seqs, names
 
 
     def __len__(self):
@@ -176,6 +176,8 @@ class Dataset(data.Dataset):
     def __getitem__(self, item):
         audio_path = self.dataset_list[item][0] # get .wav path
         label_path = self.dataset_list[item][1] # get .csv path
+
+        data_name = os.path.splitext(os.path.basename(audio_path))[0]
          
         # Load and preprocess audio
         waveform, sr = self.load_and_preprocess_audio(audio_path)
@@ -209,5 +211,5 @@ class Dataset(data.Dataset):
         seld_feats = seld_feats.reshape(total_feats_frames, self.num_feat_chans, self.nb_mel_bins)
 
         # The input of model should be fixed-length in the training.
-        return seld_feats, seld_label
+        return seld_feats, seld_label, data_name
 
