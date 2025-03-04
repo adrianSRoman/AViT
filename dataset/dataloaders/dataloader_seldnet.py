@@ -18,6 +18,7 @@ class Dataset(data.Dataset):
                  labels_path,
                  limit=None,
                  offset=0,
+                 per_file=True,
                  sample_length=12000,
                  mode="train"):
         """Construct dataset for training and validation.
@@ -46,6 +47,8 @@ class Dataset(data.Dataset):
 
         self.labels_path = labels_path
 
+        self._per_file = per_file # collect data per file
+
         assert mode in ("train", "validation"), "Mode must be one of 'train' or 'validation'."
 
         self.labels_hop_len_s = 0.1
@@ -69,9 +72,12 @@ class Dataset(data.Dataset):
         self.audio_segment_len = self.fs // 10 * self.label_seq_len 
         self.feats = FeatureClass(self.fs, self.n_fft, self.hop_length, self.win_len, self.nb_mel_bins)
         self.length = len(dataset_list)
-        # Calculate total number of sequences
-        self.length_total = sum(self.calculate_sequences_per_file(f[0]) for f in dataset_list)
-
+        # Calculate total sequences and file index mapping
+        self.file_index_map = []
+        for file_idx, f in enumerate(self.dataset_list):
+            num_sequences = self.calculate_sequences_per_file(f[0])
+            self.file_index_map.extend([file_idx] * num_sequences)
+        self.length_total = len(self.file_index_map)
 
     @staticmethod
     def next_pow2(x):
@@ -82,7 +88,7 @@ class Dataset(data.Dataset):
 
     def calculate_sequences_per_file(self, file_path):
         wave_length = self.get_wavefile_length(file_path)
-        return int(wave_length // self.frame_step)
+        return int(wave_length // (self.frame_step * self.label_seq_len))
 
     # TODO: fix the nb_classes parameter here by reading it from the json config
     def load_adpit_labels(self, label_filepath, total_label_frames, n_classes=1, seq_len=50):
@@ -90,9 +96,7 @@ class Dataset(data.Dataset):
         desc_file_polar = load_output_format_file(label_filepath)
         desc_file = convert_output_format_polar_to_cartesian(desc_file_polar)
         label_mat = get_adpit_labels_for_file(desc_file, total_label_frames, n_classes)
-        # TODO: here we need to index only the labels we need
         return torch.tensor(label_mat)
-
  
     def load_and_preprocess_audio(self, audio_path) -> Tuple[torch.Tensor, int]:
         """Load and preprocess a single audio file."""
@@ -170,10 +174,12 @@ class Dataset(data.Dataset):
 
 
     def __len__(self):
-        return self.length
+        return len(self.dataset_list) if self._per_file else self.length_total
 
 
     def __getitem__(self, item):
+        if not self._per_file:
+            item = self.file_index_map[item]
         audio_path = self.dataset_list[item][0] # get .wav path
         label_path = self.dataset_list[item][1] # get .csv path
 
@@ -183,28 +189,35 @@ class Dataset(data.Dataset):
         waveform, sr = self.load_and_preprocess_audio(audio_path)
         # Load labels
         total_label_frames = int(waveform.shape[1] / (self.fs * self.labels_hop_len_s))
-        #total_feats_frames = int(waveform.shape[1] / self.hop_length)
-        
         seld_label = self.load_adpit_labels(label_path, total_label_frames)
 
-        #print("total audio and labels length", waveform.shape, seld_label.shape)
-        if waveform.shape[1] < self.audio_segment_len:
-            # Pad the waveform to the required length
-            pad_len = self.audio_segment_len - waveform.shape[1]
-            waveform = torch.nn.functional.pad(waveform, (0, pad_len), mode='constant', value=0)
-            # TODO: need to modify the labels here too for audio shorter than 5 seconds
-            pad_label_len = self.label_seq_len - seld_label.shape[0]
-            seld_label = torch.nn.functional.pad(seld_label, (0, 0, 0, 0, 0, 0, 0, pad_label_len), mode='constant', value=0)
+        if self._per_file:
+            # Compute the required padding length for the waveform
+            pad_len = self.audio_segment_len - (waveform.shape[1] % self.audio_segment_len)
+            if pad_len != self.audio_segment_len:  # padding needed on audio samples
+                waveform = torch.nn.functional.pad(waveform, (0, pad_len), mode='constant', value=0)
+            # Compute the required padding length for the labels
+            pad_label_len = self.label_seq_len - (seld_label.shape[0] % self.label_seq_len)
+            if pad_label_len != self.label_seq_len:  # padding needed on labels samples
+                seld_label = torch.nn.functional.pad(seld_label, (0, 0, 0, 0, 0, 0, 0, pad_label_len), mode='constant', value=0)
         else:
-            # Generate valid start indices that are multiples of 100ms (i.e 100 ms of audio)
-            max_start_idx = waveform.shape[1] - self.audio_segment_len
-            valid_indices = torch.arange(0, max_start_idx + 1, self.frame_step)
-            # Select a random valid start index
-            start_idx = valid_indices[torch.randint(0, len(valid_indices), (1,))].item()
-            # Slice the waveform to get a random segment
-            waveform = waveform[:, start_idx:start_idx + self.audio_segment_len]
-            start_idx_lb = start_idx // self.frame_step
-            seld_label = seld_label[start_idx_lb:start_idx_lb + self.label_seq_len]
+            if waveform.shape[1] < self.audio_segment_len:
+                # Pad the waveform to the required length
+                pad_len = self.audio_segment_len - waveform.shape[1]
+                waveform = torch.nn.functional.pad(waveform, (0, pad_len), mode='constant', value=0)
+                # Pad the labels to the required length
+                pad_label_len = self.label_seq_len - seld_label.shape[0]
+                seld_label = torch.nn.functional.pad(seld_label, (0, 0, 0, 0, 0, 0, 0, pad_label_len), mode='constant', value=0)
+            else:
+                # Generate valid start indices that are multiples of 100ms (i.e 100 ms of audio)
+                max_start_idx = waveform.shape[1] - self.audio_segment_len
+                valid_indices = torch.arange(0, max_start_idx + 1, self.frame_step)
+                # Select a random valid start index
+                start_idx = valid_indices[torch.randint(0, len(valid_indices), (1,))].item()
+                # Slice the waveform to get a random segment
+                waveform = waveform[:, start_idx:start_idx + self.audio_segment_len]
+                start_idx_lb = start_idx // self.frame_step
+                seld_label = seld_label[start_idx_lb:start_idx_lb + self.label_seq_len]
         
         total_feats_frames = int(waveform.shape[1] / self.hop_length)
         seld_feats = self.feats._extract_features(waveform, total_feats_frames)
