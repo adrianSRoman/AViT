@@ -35,6 +35,7 @@ def main(config, resume):
         collate_fn=dataset_val.collate_fn,
     )
 
+    config["model"]["args"]["batch_size"] = config["train_dataloader"]["batch_size"]
     model = initialize_config(config["model"])
 
     optimizer = torch.optim.Adam(
