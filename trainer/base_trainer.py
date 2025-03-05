@@ -203,8 +203,14 @@ class BaseTrainer:
 
             print(f"[{timer.duration()} seconds] End this epoch.")
 
+        print("Training and Validation are over. Testing is in progres...")
+        self._test_epoch()
+
     def _train_epoch(self, epoch):
         raise NotImplementedError
 
     def _validation_epoch(self, epoch):
+        raise NotImplementedError
+
+    def _test_epoch(self, epoch):
         raise NotImplementedError

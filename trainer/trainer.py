@@ -21,10 +21,12 @@ class Trainer(BaseTrainer):
             optimizer,
             train_dataloader,
             validation_dataloader,
+            test_dataloader
     ):
         super(Trainer, self).__init__(config, resume, model, loss_function, optimizer)
         self.train_data_loader = train_dataloader
         self.validation_data_loader = validation_dataloader
+        self.test_data_loader = test_dataloader
 
     def _train_epoch(self, epoch):
         loss_total = 0.0
@@ -56,6 +58,26 @@ class Trainer(BaseTrainer):
             loss = self.loss_function(pred, label)
 
             loss_total += loss.item()
+            
+        #########################################
+        ####### Compute Validation Loss #########
+        #########################################
+        dl_len = len(self.validation_data_loader)
+        val_loss_avg = loss_total / dl_len
+        print("Loss validation", val_loss_avg)
+        wandb.log({"Loss/val": val_loss_avg}, step=epoch)
+
+        return val_loss_avg
+
+
+    @torch.no_grad()
+    def _test_epoch(self):
+
+        for i, (feats, label, data_name) in enumerate(self.test_data_loader):
+            label = label.to(self.device, dtype=torch.float32, non_blocking=True)
+            feats = feats.to(self.device, dtype=torch.float32, non_blocking=True)
+            self.optimizer.zero_grad()
+            pred = self.model(feats)
 
             ########################################
             ####### Compute Multi-ACCDOA Preds #####
@@ -116,14 +138,3 @@ class Trainer(BaseTrainer):
                         output_dict[frame_cnt].append([class_cnt, doa_pred_fc[class_cnt], doa_pred_fc[class_cnt+1], doa_pred_fc[class_cnt+2*1]])
 
             write_output_format_file(output_file, output_dict)
-
-        
-        #########################################
-        ####### Compute Validation Loss #########
-        #########################################
-        dl_len = len(self.validation_data_loader)
-        val_loss_avg = loss_total / dl_len
-        print("Loss validation", val_loss_avg)
-        wandb.log({"Loss/val": val_loss_avg}, step=epoch)
-        
-        return val_loss_avg

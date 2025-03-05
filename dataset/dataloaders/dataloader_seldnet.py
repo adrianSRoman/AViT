@@ -49,7 +49,7 @@ class Dataset(data.Dataset):
 
         self._per_file = per_file # collect data per file
 
-        assert mode in ("train", "validation"), "Mode must be one of 'train' or 'validation'."
+        assert mode in ("train", "validation", "test"), "Mode must be one of 'train', 'validation' or 'test'."
 
         self.labels_hop_len_s = 0.1
         self.dataset_list = dataset_list
@@ -84,7 +84,7 @@ class Dataset(data.Dataset):
         return 2 ** (x - 1).bit_length()
 
     def get_wavefile_length(self, file_path):
-        return librosa.get_duration(filename=file_path, sr=self.fs) * self.fs
+        return librosa.get_duration(path=file_path, sr=self.fs) * self.fs
 
     def calculate_sequences_per_file(self, file_path):
         wave_length = self.get_wavefile_length(file_path)
@@ -192,14 +192,16 @@ class Dataset(data.Dataset):
         seld_label = self.load_adpit_labels(label_path, total_label_frames)
 
         if self._per_file:
-            # Compute the required padding length for the waveform
-            pad_len = self.audio_segment_len - (waveform.shape[1] % self.audio_segment_len)
-            if pad_len != self.audio_segment_len:  # padding needed on audio samples
-                waveform = torch.nn.functional.pad(waveform, (0, pad_len), mode='constant', value=0)
             # Compute the required padding length for the labels
             pad_label_len = self.label_seq_len - (seld_label.shape[0] % self.label_seq_len)
             if pad_label_len != self.label_seq_len:  # padding needed on labels samples
                 seld_label = torch.nn.functional.pad(seld_label, (0, 0, 0, 0, 0, 0, 0, pad_label_len), mode='constant', value=0)
+            # Compute the required padding length for the waveform
+            pad_len = seld_label.shape[0]*self.frame_step - (waveform.shape[1])
+            if pad_len > 0:  # padding needed on audio samples
+                waveform = torch.nn.functional.pad(waveform, (0, pad_len), mode='constant', value=0)
+            else:
+                waveform = waveform[:, :seld_label.shape[0]*self.frame_step]
         else:
             if waveform.shape[1] < self.audio_segment_len:
                 # Pad the waveform to the required length

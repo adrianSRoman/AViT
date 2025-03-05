@@ -13,6 +13,7 @@ def main(config, resume):
     torch.manual_seed(config["seed"])  # for both CPU and GPU
     np.random.seed(config["seed"])
     
+    # train dataset
     dataset_train = initialize_config(config["train_dataset"])
     train_dataloader = DataLoader(
         dataset=dataset_train,
@@ -27,12 +28,22 @@ def main(config, resume):
         config=config
     )
 
+    # validation dataset
     dataset_val = initialize_config(config["validation_dataset"])
     valid_dataloader = DataLoader(
         dataset=initialize_config(config["validation_dataset"]),
         num_workers=1,
         batch_size=1,
         collate_fn=dataset_val.collate_fn,
+    )
+
+    # test dataset
+    dataset_test = initialize_config(config["test_dataset"])
+    test_dataloader = DataLoader(
+        dataset=initialize_config(config["test_dataset"]),
+        num_workers=1,
+        batch_size=1,
+        collate_fn=dataset_test.collate_fn,
     )
 
     config["model"]["args"]["batch_size"] = config["train_dataloader"]["batch_size"]
@@ -56,6 +67,7 @@ def main(config, resume):
         optimizer=optimizer,
         train_dataloader=train_dataloader,
         validation_dataloader=valid_dataloader,
+        test_dataloader=test_dataloader
     )
 
     trainer.train()
