@@ -41,39 +41,35 @@ class PositionalEmbedding(nn.Module):  # Not used in the baseline
 
 
 class SeldModel(torch.nn.Module):
-    def __init__(self, label_seq_len, unique_classes, f_pool_size, nb_cnn2d_filt, 
-                dropout_rate, rnn_size, nb_rnn_layers, fnn_size, nb_fnn_layers, 
-                nb_heads, nb_self_attn_layers, batch_size):
+    def __init__(self, params, feat_config):
         super().__init__()
-        t_pool_size = [5, 1, 1]
-        self.nb_classes = unique_classes
-        in_feat_shape = (batch_size, 10, label_seq_len*50, 64)
-        out_shape = (batch_size, label_seq_len, 9)
+        t_pool_size = params["t_pool_size"]
+        f_pool_size = params["f_pool_size"]
         self.conv_block_list = nn.ModuleList()
         if len(f_pool_size):
             for conv_cnt in range(len(f_pool_size)):
-                self.conv_block_list.append(ConvBlock(in_channels=nb_cnn2d_filt if conv_cnt else in_feat_shape[1], out_channels=nb_cnn2d_filt))
+                self.conv_block_list.append(ConvBlock(in_channels=params["nb_cnn2d_filt"] if conv_cnt else feat_config["num_feat_chans"], out_channels=params["nb_cnn2d_filt"]))
                 self.conv_block_list.append(nn.MaxPool2d((t_pool_size[conv_cnt], f_pool_size[conv_cnt])))
-                self.conv_block_list.append(nn.Dropout2d(p=dropout_rate))
+                self.conv_block_list.append(nn.Dropout2d(p=params["dropout_rate"]))
 
-        self.gru_input_dim = nb_cnn2d_filt * int(np.floor(in_feat_shape[-1] / np.prod(f_pool_size)))
-        self.gru = torch.nn.GRU(input_size=self.gru_input_dim, hidden_size=rnn_size,
-                                num_layers=nb_rnn_layers, batch_first=True,
-                                dropout=dropout_rate, bidirectional=True)
+        self.gru_input_dim = params["nb_cnn2d_filt"] * int(np.floor(feat_config["nb_mel_bins"] / np.prod(f_pool_size)))
+        self.gru = torch.nn.GRU(input_size=self.gru_input_dim, hidden_size=params["rnn_size"],
+                                num_layers=params["nb_rnn_layers"], batch_first=True,
+                                dropout=params["dropout_rate"], bidirectional=True)
 
-        # self.pos_embedder = PositionalEmbedding(self.params['rnn_size'])
+        # self.pos_embedder = PositionalEmbedding(self.params['params["rnn_size"]'])
 
         self.mhsa_block_list = nn.ModuleList()
         self.layer_norm_list = nn.ModuleList()
-        for mhsa_cnt in range(nb_self_attn_layers):
-            self.mhsa_block_list.append(nn.MultiheadAttention(embed_dim=rnn_size, num_heads=nb_heads, dropout=dropout_rate,  batch_first=True))
-            self.layer_norm_list.append(nn.LayerNorm(rnn_size))
+        for mhsa_cnt in range(params["nb_self_attn_layers"]):
+            self.mhsa_block_list.append(nn.MultiheadAttention(embed_dim=params["rnn_size"], num_heads=params["nb_heads"], dropout=params["dropout_rate"],  batch_first=True))
+            self.layer_norm_list.append(nn.LayerNorm(params["rnn_size"]))
 
         self.fnn_list = torch.nn.ModuleList()
-        if nb_fnn_layers:
-            for fc_cnt in range(nb_fnn_layers):
-                self.fnn_list.append(nn.Linear(fnn_size if fc_cnt else rnn_size, fnn_size, bias=True))
-        self.fnn_list.append(nn.Linear(fnn_size if nb_fnn_layers else rnn_size, out_shape[-1], bias=True))
+        if params["nb_fnn_layers"]:
+            for fc_cnt in range(params["nb_fnn_layers"]):
+                self.fnn_list.append(nn.Linear(params["fnn_size"] if fc_cnt else params["rnn_size"], params["fnn_size"], bias=True))
+        self.fnn_list.append(nn.Linear(params["fnn_size"] if params["nb_fnn_layers"] else params["rnn_size"], feat_config["unique_classes"]*3*3, bias=True))
 
     def forward(self, x):
         """input: (batch_size, mic_channels, time_steps, mel_bins)"""

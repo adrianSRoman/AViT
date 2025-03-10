@@ -13,6 +13,13 @@ def main(config, resume):
     torch.manual_seed(config["seed"])  # for both CPU and GPU
     np.random.seed(config["seed"])
     
+    # set feature extraction configurations
+    print(config["model"])
+    features_config = config["model"]["args"]["feat_config"]
+    config["train_dataset"]["args"]["features_config"] = features_config
+    config["validation_dataset"]["args"]["features_config"] = features_config
+    config["test_dataset"]["args"]["features_config"] = features_config
+
     # train dataset
     dataset_train = initialize_config(config["train_dataset"])
     train_dataloader = DataLoader(
@@ -46,7 +53,6 @@ def main(config, resume):
         collate_fn=dataset_test.collate_fn,
     )
 
-    config["model"]["args"]["batch_size"] = config["train_dataloader"]["batch_size"]
     model = initialize_config(config["model"])
 
     optimizer = torch.optim.Adam(
