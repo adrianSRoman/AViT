@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 
 from trainer.base_trainer import BaseTrainer
 from util.utils import get_multi_accdoa_labels, write_output_format_file, reshape_3Dto2D, determine_similar_location 
-from utils.SELD_evaluation_metrics import ComputeSELDResults
 plt.switch_backend('agg')
 
 import wandb
@@ -28,8 +27,8 @@ class Trainer(BaseTrainer):
         self.train_data_loader = train_dataloader
         self.validation_data_loader = validation_dataloader
         self.test_data_loader = test_dataloader
-        self.self.output_test_dir = "output_test"
-        self.self.output_val_dir = "output_val"
+        self.output_test_dir = "output_test"
+        self.output_val_dir = "output_val"
 
     def _train_epoch(self, epoch):
         loss_total = 0.0
@@ -72,6 +71,9 @@ class Trainer(BaseTrainer):
         val_loss_avg = loss_total / dl_len
         print("Loss validation", val_loss_avg)
         wandb.log({"Loss/val": val_loss_avg}, step=epoch)
+        
+        # Calculate the DCASE 2021 metrics - Location-aware detection and Class-aware localization scores
+        val_ER, val_F, val_LE, val_LR, val_seld_scr, classwise_val_scr = seld_metrics_computer.get_SELD_Results(self.output_val_dir)
 
         return val_loss_avg
 
@@ -149,54 +151,3 @@ class Trainer(BaseTrainer):
         write_output_format_file(output_file, output_dict)
 
 
-    def get_SELD_Results(self, pred_files_path, is_jackknife=False):
-        # collect predicted files info
-        pred_files = os.listdir(pred_files_path)
-        pred_labels_dict = {}
-        eval = SELD_evaluation_metrics.SELDMetrics(nb_classes=self._feat_cls.get_nb_classes(), doa_threshold=self._doa_thresh, average=self._average)
-        for pred_cnt, pred_file in enumerate(pred_files):
-            # Load predicted output format file
-            pred_dict = self._feat_cls.load_output_format_file(os.path.join(pred_files_path, pred_file))
-            if self._use_polar_format:
-                pred_dict = self._feat_cls.convert_output_format_cartesian_to_polar(pred_dict)
-            pred_labels = self._feat_cls.segment_labels(pred_dict, self._ref_labels[pred_file][1])
-            # Calculated scores
-            eval.update_seld_scores(pred_labels, self._ref_labels[pred_file][0])
-            if is_jackknife:
-                pred_labels_dict[pred_file] = pred_labels
-        # Overall SED and DOA scores
-        ER, F, LE, LR, seld_scr, classwise_results = eval.compute_seld_scores()
-
-        if is_jackknife:
-            global_values = [ER, F, LE, LR, seld_scr]
-            if len(classwise_results):
-                global_values.extend(classwise_results.reshape(-1).tolist())
-            partial_estimates = []
-            # Calculate partial estimates by leave-one-out method
-            for leave_file in pred_files:
-                leave_one_out_list = pred_files[:]
-                leave_one_out_list.remove(leave_file)
-                eval = SELD_evaluation_metrics.SELDMetrics(nb_classes=self._feat_cls.get_nb_classes(), doa_threshold=self._doa_thresh, average=self._average)
-                for pred_cnt, pred_file in enumerate(leave_one_out_list):
-                    # Calculated scores
-                    eval.update_seld_scores(pred_labels_dict[pred_file], self._ref_labels[pred_file][0])
-                ER, F, LE, LR, seld_scr, classwise_results = eval.compute_seld_scores()
-                leave_one_out_est = [ER, F, LE, LR, seld_scr]
-                if len(classwise_results):
-                    leave_one_out_est.extend(classwise_results.reshape(-1).tolist())
-
-                # Overall SED and DOA scores
-                partial_estimates.append(leave_one_out_est)
-            partial_estimates = np.array(partial_estimates)
-                    
-            estimate, bias, std_err, conf_interval = [-1]*len(global_values), [-1]*len(global_values), [-1]*len(global_values), [-1]*len(global_values)
-            for i in range(len(global_values)):
-                estimate[i], bias[i], std_err[i], conf_interval[i] = jackknife_estimation(
-                           global_value=global_values[i],
-                           partial_estimates=partial_estimates[:, i],
-                           significance_level=0.05
-                           )
-            return [ER, conf_interval[0]], [F, conf_interval[1]], [LE, conf_interval[2]], [LR, conf_interval[3]], [seld_scr, conf_interval[4]], [classwise_results, np.array(conf_interval)[5:].reshape(5,13,2) if len(classwise_results) else []]
-      
-        else:      
-            return ER, F, LE, LR, seld_scr, classwise_results

@@ -7,6 +7,7 @@ import torch
 from torch.optim.lr_scheduler import StepLR
 from util import visualization
 from util.utils import prepare_empty_dir, ExecutionTime
+from utils.seld_evaluation_metrics import ComputeSELDResults
 
 class BaseTrainer:
     def __init__(self,
@@ -35,6 +36,9 @@ class BaseTrainer:
         self.validation_interval = self.validation_config["interval"]
         self.find_max = self.validation_config["find_max"]
         self.validation_custom_config = self.validation_config["custom"]
+
+        # SELD metrics configs
+        self.seld_metrics_computer = ComputeSELDResults(config)
 
         # The following args is not in the config file. We will update it if the resume is True in later.
         self.start_epoch = 1

@@ -8,7 +8,7 @@ from torch.utils import data
 from pathlib import Path
 from typing import List, Tuple, Optional
 
-from util.utils import load_output_format_file, convert_output_format_polar_to_cartesian, get_adpit_labels_for_file
+from util.utils import load_output_format_file, convert_output_format_polar_to_cartesian, get_adpit_labels_for_file, split_in_seqs
 
 from dataset.features import FeatureClass 
 
@@ -136,28 +136,6 @@ class Dataset(data.Dataset):
         # Shape: (4, freq_bins, time_frames)
         return phs_spec
 
-    def split_in_seqs(self, data, _seq_len):
-        if len(data.shape) == 1:
-            if data.shape[0] % _seq_len:
-                data = data[:-(data.shape[0] % _seq_len), :]
-            data = data.reshape((data.shape[0] // _seq_len, _seq_len, 1))
-        elif len(data.shape) == 2:
-            if data.shape[0] % _seq_len:
-                data = data[:-(data.shape[0] % _seq_len), :]
-            data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1]))
-        elif len(data.shape) == 3:
-            if data.shape[0] % _seq_len:
-                data = data[:-(data.shape[0] % _seq_len), :, :]
-            data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1], data.shape[2]))
-        elif len(data.shape) == 4:  # for multi-ACCDOA with ADPIT
-            if data.shape[0] % _seq_len:
-                data = data[:-(data.shape[0] % _seq_len), :, :, :]
-            data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1], data.shape[2], data.shape[3]))
-        else:
-            print('ERROR: Unknown data dimensions: {}'.format(data.shape))
-            exit()
-        return data
-
     def collate_fn(self, batch):
         features, labels, names = zip(*batch)
 
@@ -166,8 +144,8 @@ class Dataset(data.Dataset):
         labels = torch.cat([l for l in labels], dim=0)
 
         # Split into sequences
-        feature_seqs = self.split_in_seqs(features, self.feat_seq_len)
-        label_seqs = self.split_in_seqs(labels, self.label_seq_len)
+        feature_seqs = split_in_seqs(features, self.feat_seq_len)
+        label_seqs = split_in_seqs(labels, self.label_seq_len)
         
         feature_seqs = feature_seqs.permute(0, 2, 1, 3)
 

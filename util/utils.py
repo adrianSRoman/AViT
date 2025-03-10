@@ -80,6 +80,28 @@ def print_tensor_info(tensor, flag="Tensor"):
 
 # TODO: move this to a separate file (utils_seld.py)
 
+def split_in_seqs(data, _seq_len):
+    if len(data.shape) == 1:
+        if data.shape[0] % _seq_len:
+            data = data[:-(data.shape[0] % _seq_len), :]
+        data = data.reshape((data.shape[0] // _seq_len, _seq_len, 1))
+    elif len(data.shape) == 2:
+        if data.shape[0] % _seq_len:
+            data = data[:-(data.shape[0] % _seq_len), :]
+        data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1]))
+    elif len(data.shape) == 3:
+        if data.shape[0] % _seq_len:
+            data = data[:-(data.shape[0] % _seq_len), :, :]
+        data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1], data.shape[2]))
+    elif len(data.shape) == 4:  # for multi-ACCDOA with ADPIT
+        if data.shape[0] % _seq_len:
+            data = data[:-(data.shape[0] % _seq_len), :, :, :]
+        data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1], data.shape[2], data.shape[3]))
+    else:
+        print('ERROR: Unknown data dimensions: {}'.format(data.shape))
+        exit()
+    return data
+
 def distance_between_cartesian_coordinates(x1, y1, z1, x2, y2, z2):
     """
     Angular distance between two cartesian coordinates
@@ -111,6 +133,38 @@ def determine_similar_location(sed_pred0, sed_pred1, doa_pred0, doa_pred1, class
 
 def reshape_3Dto2D(A):
     return A.reshape(A.shape[0] * A.shape[1], A.shape[2])
+
+def convert_output_format_polar_to_cartesian(in_dict):
+    out_dict = {}
+    for frame_cnt in in_dict.keys():
+        if frame_cnt not in out_dict:
+            out_dict[frame_cnt] = []
+            for tmp_val in in_dict[frame_cnt]:
+
+                ele_rad = tmp_val[3]*np.pi/180.
+                azi_rad = tmp_val[2]*np.pi/180
+
+                tmp_label = np.cos(ele_rad)
+                x = np.cos(azi_rad) * tmp_label
+                y = np.sin(azi_rad) * tmp_label
+                z = np.sin(ele_rad)
+                out_dict[frame_cnt].append([tmp_val[0], tmp_val[1], x, y, z])
+    return out_dict
+
+def convert_output_format_cartesian_to_polar(in_dict):
+    out_dict = {}
+    for frame_cnt in in_dict.keys():
+        if frame_cnt not in out_dict:
+            out_dict[frame_cnt] = []
+            for tmp_val in in_dict[frame_cnt]:
+                x, y, z = tmp_val[2], tmp_val[3], tmp_val[4]
+
+                # in degrees
+                azimuth = np.arctan2(y, x) * 180 / np.pi
+                elevation = np.arctan2(z, np.sqrt(x**2 + y**2)) * 180 / np.pi
+                r = np.sqrt(x**2 + y**2 + z**2)
+                out_dict[frame_cnt].append([tmp_val[0], tmp_val[1], azimuth, elevation])
+    return out_dict
 
 def write_output_format_file(_output_format_file, _output_format_dict):
     """
