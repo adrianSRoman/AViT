@@ -8,7 +8,7 @@ from torch.utils import data
 from pathlib import Path
 from typing import List, Tuple, Optional
 
-from util.utils import load_output_format_file, convert_output_format_polar_to_cartesian, get_adpit_labels_for_file
+from util.utils import load_output_format_file, convert_output_format_polar_to_cartesian, get_adpit_labels_for_file, split_in_seqs
 
 from dataset.features import FeatureClass 
 
@@ -20,7 +20,8 @@ class Dataset(data.Dataset):
                  offset=0,
                  per_file=True,
                  sample_length=12000,
-                 mode="train"):
+                 mode="train",
+                 features_config=None):
         """Construct dataset for training and validation.
         Args:
             dataset (str): *.txt, the path of the dataset list file. See "Notes."
@@ -51,23 +52,23 @@ class Dataset(data.Dataset):
 
         assert mode in ("train", "validation", "test"), "Mode must be one of 'train', 'validation' or 'test'."
 
-        self.labels_hop_len_s = 0.1
         self.dataset_list = dataset_list
         self.sample_length = sample_length
         self.mode = mode
-        # TODO: Parametrize the variables below
-        self.dataset_type = "foa"
-        self.fs = 16000
-        self.hop_len_s = 0.02
+        # Load feature extraction parameters
+        self.dataset_type = features_config["type"]
+        self.fs = features_config["fs"]
+        self.hop_len_s = features_config["hop_len_s"]
+        self.labels_hop_len_s = features_config["label_hop_len_s"]
         self.hop_length = int(self.fs * self.hop_len_s) 
         self.frame_step = int(self.fs * self.labels_hop_len_s)
         self.win_len = 2 * self.hop_length
         self.n_fft = self.next_pow2(self.win_len)
-        self.nb_mel_bins = 64
-        self.label_seq_len = 50 # 5 seconds sequence length
-        self.num_feat_chans = 10
+        self.nb_mel_bins = features_config["nb_mel_bins"]
+        self.label_seq_len = features_config["label_seq_len"] # 5 seconds sequence length
+        self.num_feat_chans = features_config["num_feat_chans"]
         self.feat_seq_len = self.label_seq_len * int(self.labels_hop_len_s // self.hop_len_s)
-        self.normalize_audio = False
+        self.normalize_audio = features_config["normalize_audio"]
         # audio segment length (number of samples needed for a feat sequence length)
         self.audio_segment_len = self.fs // 10 * self.label_seq_len 
         self.feats = FeatureClass(self.fs, self.n_fft, self.hop_length, self.win_len, self.nb_mel_bins)
@@ -135,28 +136,6 @@ class Dataset(data.Dataset):
         # Shape: (4, freq_bins, time_frames)
         return phs_spec
 
-    def split_in_seqs(self, data, _seq_len):
-        if len(data.shape) == 1:
-            if data.shape[0] % _seq_len:
-                data = data[:-(data.shape[0] % _seq_len), :]
-            data = data.reshape((data.shape[0] // _seq_len, _seq_len, 1))
-        elif len(data.shape) == 2:
-            if data.shape[0] % _seq_len:
-                data = data[:-(data.shape[0] % _seq_len), :]
-            data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1]))
-        elif len(data.shape) == 3:
-            if data.shape[0] % _seq_len:
-                data = data[:-(data.shape[0] % _seq_len), :, :]
-            data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1], data.shape[2]))
-        elif len(data.shape) == 4:  # for multi-ACCDOA with ADPIT
-            if data.shape[0] % _seq_len:
-                data = data[:-(data.shape[0] % _seq_len), :, :, :]
-            data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1], data.shape[2], data.shape[3]))
-        else:
-            print('ERROR: Unknown data dimensions: {}'.format(data.shape))
-            exit()
-        return data
-
     def collate_fn(self, batch):
         features, labels, names = zip(*batch)
 
@@ -165,8 +144,8 @@ class Dataset(data.Dataset):
         labels = torch.cat([l for l in labels], dim=0)
 
         # Split into sequences
-        feature_seqs = self.split_in_seqs(features, self.feat_seq_len)
-        label_seqs = self.split_in_seqs(labels, self.label_seq_len)
+        feature_seqs = split_in_seqs(features, self.feat_seq_len)
+        label_seqs = split_in_seqs(labels, self.label_seq_len)
         
         feature_seqs = feature_seqs.permute(0, 2, 1, 3)
 

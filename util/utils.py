@@ -80,6 +80,70 @@ def print_tensor_info(tensor, flag="Tensor"):
 
 # TODO: move this to a separate file (utils_seld.py)
 
+def split_in_seqs(data, _seq_len):
+    if len(data.shape) == 1:
+        if data.shape[0] % _seq_len:
+            data = data[:-(data.shape[0] % _seq_len), :]
+        data = data.reshape((data.shape[0] // _seq_len, _seq_len, 1))
+    elif len(data.shape) == 2:
+        if data.shape[0] % _seq_len:
+            data = data[:-(data.shape[0] % _seq_len), :]
+        data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1]))
+    elif len(data.shape) == 3:
+        if data.shape[0] % _seq_len:
+            data = data[:-(data.shape[0] % _seq_len), :, :]
+        data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1], data.shape[2]))
+    elif len(data.shape) == 4:  # for multi-ACCDOA with ADPIT
+        if data.shape[0] % _seq_len:
+            data = data[:-(data.shape[0] % _seq_len), :, :, :]
+        data = data.reshape((data.shape[0] // _seq_len, _seq_len, data.shape[1], data.shape[2], data.shape[3]))
+    else:
+        print('ERROR: Unknown data dimensions: {}'.format(data.shape))
+        exit()
+    return data
+
+def segment_labels(_pred_dict, _max_frames, nb_label_frames_1s = 10):
+    '''
+        Collects class-wise sound event location information in segments of length 1s from reference dataset
+    :param _pred_dict: Dictionary containing frame-wise sound event time and location information. Output of SELD method
+    :param _max_frames: Total number of frames in the recording
+    :return: Dictionary containing class-wise sound event location information in each segment of audio
+            dictionary_name[segment-index][class-index] = list(frame-cnt-within-segment, azimuth, elevation)
+    '''
+    nb_label_frames_1s = nb_label_frames_1s
+    nb_blocks = int(np.ceil(_max_frames/float(nb_label_frames_1s)))
+    output_dict = {x: {} for x in range(nb_blocks)}
+    for frame_cnt in range(0, _max_frames, nb_label_frames_1s):
+
+        # Collect class-wise information for each block
+        # [class][frame] = <list of doa values>
+        # Data structure supports multi-instance occurence of same class
+        block_cnt = frame_cnt // nb_label_frames_1s
+        loc_dict = {}
+        for audio_frame in range(frame_cnt, frame_cnt+nb_label_frames_1s):
+            if audio_frame not in _pred_dict:
+                continue
+            for value in _pred_dict[audio_frame]:
+                if value[0] not in loc_dict:
+                    loc_dict[value[0]] = {}
+
+                block_frame = audio_frame - frame_cnt
+                if block_frame not in loc_dict[value[0]]:
+                    loc_dict[value[0]][block_frame] = []
+                loc_dict[value[0]][block_frame].append(value[1:])
+
+        # Update the block wise details collected above in a global structure
+        for class_cnt in loc_dict:
+            if class_cnt not in output_dict[block_cnt]:
+                output_dict[block_cnt][class_cnt] = []
+
+            keys = [k for k in loc_dict[class_cnt]]
+            values = [loc_dict[class_cnt][k] for k in loc_dict[class_cnt]]
+
+            output_dict[block_cnt][class_cnt].append([keys, values])
+
+    return output_dict
+
 def distance_between_cartesian_coordinates(x1, y1, z1, x2, y2, z2):
     """
     Angular distance between two cartesian coordinates
@@ -111,6 +175,38 @@ def determine_similar_location(sed_pred0, sed_pred1, doa_pred0, doa_pred1, class
 
 def reshape_3Dto2D(A):
     return A.reshape(A.shape[0] * A.shape[1], A.shape[2])
+
+def convert_output_format_polar_to_cartesian(in_dict):
+    out_dict = {}
+    for frame_cnt in in_dict.keys():
+        if frame_cnt not in out_dict:
+            out_dict[frame_cnt] = []
+            for tmp_val in in_dict[frame_cnt]:
+
+                ele_rad = tmp_val[3]*np.pi/180.
+                azi_rad = tmp_val[2]*np.pi/180
+
+                tmp_label = np.cos(ele_rad)
+                x = np.cos(azi_rad) * tmp_label
+                y = np.sin(azi_rad) * tmp_label
+                z = np.sin(ele_rad)
+                out_dict[frame_cnt].append([tmp_val[0], tmp_val[1], x, y, z])
+    return out_dict
+
+def convert_output_format_cartesian_to_polar(in_dict):
+    out_dict = {}
+    for frame_cnt in in_dict.keys():
+        if frame_cnt not in out_dict:
+            out_dict[frame_cnt] = []
+            for tmp_val in in_dict[frame_cnt]:
+                x, y, z = tmp_val[2], tmp_val[3], tmp_val[4]
+
+                # in degrees
+                azimuth = np.arctan2(y, x) * 180 / np.pi
+                elevation = np.arctan2(z, np.sqrt(x**2 + y**2)) * 180 / np.pi
+                r = np.sqrt(x**2 + y**2 + z**2)
+                out_dict[frame_cnt].append([tmp_val[0], tmp_val[1], azimuth, elevation])
+    return out_dict
 
 def write_output_format_file(_output_format_file, _output_format_dict):
     """

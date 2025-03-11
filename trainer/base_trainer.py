@@ -7,6 +7,7 @@ import torch
 from torch.optim.lr_scheduler import StepLR
 from util import visualization
 from util.utils import prepare_empty_dir, ExecutionTime
+from util.seld_eval_metrics import ComputeSELDResults
 
 class BaseTrainer:
     def __init__(self,
@@ -27,7 +28,6 @@ class BaseTrainer:
             self.model = torch.nn.DataParallel(self.model, device_ids=list(range(self.n_gpu)))
             self.model = model.to(self.device)
 
-
         # Trainer
         self.epochs = config["trainer"]["epochs"]
         self.save_checkpoint_interval = config["trainer"]["save_checkpoint_interval"]
@@ -35,6 +35,9 @@ class BaseTrainer:
         self.validation_interval = self.validation_config["interval"]
         self.find_max = self.validation_config["find_max"]
         self.validation_custom_config = self.validation_config["custom"]
+
+        # SELD metrics configs
+        self.seld_metrics_computer = ComputeSELDResults(config)
 
         # The following args is not in the config file. We will update it if the resume is True in later.
         self.start_epoch = 1
