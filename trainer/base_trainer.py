@@ -7,7 +7,7 @@ import torch
 from torch.optim.lr_scheduler import StepLR
 from util import visualization
 from util.utils import prepare_empty_dir, ExecutionTime
-from utils.seld_evaluation_metrics import ComputeSELDResults
+from util.seld_eval_metrics import ComputeSELDResults
 
 class BaseTrainer:
     def __init__(self,
@@ -27,7 +27,6 @@ class BaseTrainer:
         if self.n_gpu > 1:
             self.model = torch.nn.DataParallel(self.model, device_ids=list(range(self.n_gpu)))
             self.model = model.to(self.device)
-
 
         # Trainer
         self.epochs = config["trainer"]["epochs"]

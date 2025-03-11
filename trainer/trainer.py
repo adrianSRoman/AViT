@@ -29,6 +29,8 @@ class Trainer(BaseTrainer):
         self.test_data_loader = test_dataloader
         self.output_test_dir = "output_test"
         self.output_val_dir = "output_val"
+        os.makedirs(self.output_test_dir, exist_ok=True)
+        os.makedirs(self.output_val_dir, exist_ok=True)
 
     def _train_epoch(self, epoch):
         loss_total = 0.0
@@ -60,7 +62,7 @@ class Trainer(BaseTrainer):
             feats = feats.to(self.device, dtype=torch.float32, non_blocking=True)
             self.optimizer.zero_grad()
             pred = self.model(feats)
-            self._write_seld_output_to_csv(pred, self.output_val_dir) # write prediction to csv
+            self._write_seld_output_to_csv(pred, data_name, self.output_val_dir) # write prediction to csv
             loss = self.loss_function(pred, label)
             loss_total += loss.item()
             
@@ -73,7 +75,12 @@ class Trainer(BaseTrainer):
         wandb.log({"Loss/val": val_loss_avg}, step=epoch)
         
         # Calculate the DCASE 2021 metrics - Location-aware detection and Class-aware localization scores
-        val_ER, val_F, val_LE, val_LR, val_seld_scr, classwise_val_scr = seld_metrics_computer.get_SELD_Results(self.output_val_dir)
+        val_ER, val_F, val_LE, val_LR, val_seld_scr, classwise_val_scr = self.seld_metrics_computer.get_SELD_Results(self.output_val_dir)
+        print('ER/F/LE/LR/SELD: ({:0.2f}/{:0.2f}/{:0.2f}/{:0.2f}/{:0.2f})'.format(val_ER, val_F, val_LE, val_LR, val_seld_scr))
+        # Log metrics to W&B as a table
+        table = wandb.Table(columns=["Epoch", "ER", "F", "LE", "LR", "SELD"])
+        table.add_data(epoch, val_ER, val_F, val_LE, val_LR, val_seld_scr)
+        wandb.log({"Validation Metrics Table": table}, step=epoch)
 
         return val_loss_avg
 
@@ -86,10 +93,18 @@ class Trainer(BaseTrainer):
             feats = feats.to(self.device, dtype=torch.float32, non_blocking=True)
             self.optimizer.zero_grad()
             pred = self.model(feats)
-            self._write_seld_output_to_csv(pred, self.output_test_dir) # write prediction to csv
+            self._write_seld_output_to_csv(pred, data_name, self.output_test_dir) # write prediction to csv
+
+        # Calculate the DCASE 2021 metrics - Location-aware detection and Class-aware localization scores
+        ER, F, LE, LR, seld_scr, classwise_scr = self.seld_metrics_computer.get_SELD_Results(self.output_test_dir)
+        print('ER/F/LE/LR/SELD: ({:0.2f}/{:0.2f}/{:0.2f}/{:0.2f}/{:0.2f})'.format(ER, F, LE, LR, seld_scr))
+        # Log metrics to W&B as a table
+        table = wandb.Table(columns=["Epoch", "ER", "F", "LE", "LR", "SELD"])
+        table.add_data(0, ER, F, LE, LR, seld_scr)
+        wandb.log({"Test Metrics Table": table}, step=0)
 
 
-    def _write_seld_output_to_csv(self, pred, output_path)
+    def _write_seld_output_to_csv(self, pred, data_name, output_path):
         ########################################
         ####### Compute Multi-ACCDOA Preds #####
         ########################################

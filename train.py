@@ -14,7 +14,6 @@ def main(config, resume):
     np.random.seed(config["seed"])
     
     # set feature extraction configurations
-    print(config["model"])
     features_config = config["model"]["args"]["feat_config"]
     config["train_dataset"]["args"]["features_config"] = features_config
     config["validation_dataset"]["args"]["features_config"] = features_config

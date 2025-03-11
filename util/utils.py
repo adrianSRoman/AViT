@@ -102,6 +102,48 @@ def split_in_seqs(data, _seq_len):
         exit()
     return data
 
+def segment_labels(_pred_dict, _max_frames, nb_label_frames_1s = 10):
+    '''
+        Collects class-wise sound event location information in segments of length 1s from reference dataset
+    :param _pred_dict: Dictionary containing frame-wise sound event time and location information. Output of SELD method
+    :param _max_frames: Total number of frames in the recording
+    :return: Dictionary containing class-wise sound event location information in each segment of audio
+            dictionary_name[segment-index][class-index] = list(frame-cnt-within-segment, azimuth, elevation)
+    '''
+    nb_label_frames_1s = nb_label_frames_1s
+    nb_blocks = int(np.ceil(_max_frames/float(nb_label_frames_1s)))
+    output_dict = {x: {} for x in range(nb_blocks)}
+    for frame_cnt in range(0, _max_frames, nb_label_frames_1s):
+
+        # Collect class-wise information for each block
+        # [class][frame] = <list of doa values>
+        # Data structure supports multi-instance occurence of same class
+        block_cnt = frame_cnt // nb_label_frames_1s
+        loc_dict = {}
+        for audio_frame in range(frame_cnt, frame_cnt+nb_label_frames_1s):
+            if audio_frame not in _pred_dict:
+                continue
+            for value in _pred_dict[audio_frame]:
+                if value[0] not in loc_dict:
+                    loc_dict[value[0]] = {}
+
+                block_frame = audio_frame - frame_cnt
+                if block_frame not in loc_dict[value[0]]:
+                    loc_dict[value[0]][block_frame] = []
+                loc_dict[value[0]][block_frame].append(value[1:])
+
+        # Update the block wise details collected above in a global structure
+        for class_cnt in loc_dict:
+            if class_cnt not in output_dict[block_cnt]:
+                output_dict[block_cnt][class_cnt] = []
+
+            keys = [k for k in loc_dict[class_cnt]]
+            values = [loc_dict[class_cnt][k] for k in loc_dict[class_cnt]]
+
+            output_dict[block_cnt][class_cnt].append([keys, values])
+
+    return output_dict
+
 def distance_between_cartesian_coordinates(x1, y1, z1, x2, y2, z2):
     """
     Angular distance between two cartesian coordinates

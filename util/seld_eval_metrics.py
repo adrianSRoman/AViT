@@ -13,16 +13,16 @@
 
 # Metrics borrowed from https://github.com/sharathadavanne/seld-dcase2023
 
+import os
 import numpy as np
 
 eps = np.finfo(np.float).eps
 from scipy.optimize import linear_sum_assignment
 from IPython import embed
 
-import parameters
 from scipy import stats
 
-from utils.utils import load_output_format_file, convert_output_format_cartesian_to_polar, segment_labels
+from util.utils import load_output_format_file, convert_output_format_cartesian_to_polar, segment_labels
 
 
 class SELDMetrics(object):
@@ -323,7 +323,7 @@ class ComputeSELDResults(object):
             self, params, ref_files_folder=None, use_polar_format=True
     ):
         self._use_polar_format = use_polar_format
-        self._desc_dir = ref_files_folder if ref_files_folder is not None else os.path.join(params['dataset_dir'], 'metadata_dev')
+        self._desc_dir = ref_files_folder if ref_files_folder is not None else params["train_dataset"]["args"]["labels_path"]
         self._doa_thresh = params['seld_metrics']['lad_doa_thresh']
 
         self.num_classes = params['model']['args']['feat_config']['unique_classes']
@@ -374,7 +374,7 @@ class ComputeSELDResults(object):
         # collect predicted files info
         pred_files = os.listdir(pred_files_path)
         pred_labels_dict = {}
-        eval = SELD_evaluation_metrics.SELDMetrics(nb_classes=self.num_classes, doa_threshold=self._doa_thresh, average=self._average)
+        eval = SELDMetrics(nb_classes=self.num_classes, doa_threshold=self._doa_thresh, average=self._average)
         for pred_cnt, pred_file in enumerate(pred_files):
             # Load predicted output format file
             pred_dict = load_output_format_file(os.path.join(pred_files_path, pred_file))
@@ -397,7 +397,7 @@ class ComputeSELDResults(object):
             for leave_file in pred_files:
                 leave_one_out_list = pred_files[:]
                 leave_one_out_list.remove(leave_file)
-                eval = SELD_evaluation_metrics.SELDMetrics(nb_classes=self.num_classes, doa_threshold=self._doa_thresh, average=self._average)
+                eval = SELDMetrics(nb_classes=self.num_classes, doa_threshold=self._doa_thresh, average=self._average)
                 for pred_cnt, pred_file in enumerate(leave_one_out_list):
                     # Calculated scores
                     eval.update_seld_scores(pred_labels_dict[pred_file], self._ref_labels[pred_file][0])
@@ -449,7 +449,7 @@ class ComputeSELDResults(object):
             # Calculate scores across files for a given score_type
             for split_key in np.sort(list(split_cnt_dict)):
                 # Load evaluation metric class
-                eval = SELD_evaluation_metrics.SELDMetrics(nb_classes=self.num_classes, doa_threshold=self._doa_thresh, average=self._average)
+                eval = SELDMetrics(nb_classes=self.num_classes, doa_threshold=self._doa_thresh, average=self._average)
                 for pred_cnt, pred_file in enumerate(split_cnt_dict[split_key]):
                     # Load predicted output format file
                     pred_dict = load_output_format_file(os.path.join(pred_output_format_files, pred_file))
