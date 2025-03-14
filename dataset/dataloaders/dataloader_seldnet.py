@@ -119,23 +119,6 @@ class Dataset(data.Dataset):
         return waveform, sr
     
 
-    def compute_stft_features(self, waveform: torch.Tensor, start_idx: int) -> torch.Tensor:
-        """Compute STFT features for a segment of audio."""
-        # Extract segment
-        segment = waveform[:, start_idx:start_idx + self.sample_length]
-        # Compute STFT
-        stft = torch.stft(
-            segment,
-            n_fft=self.n_fft,
-            hop_length=self.hop_length,
-            window=torch.hann_window(self.n_fft),
-            return_complex=True
-        )
-        # Convert to phase spectrogram
-        phs_spec = torch.angle(stft)
-        # Shape: (4, freq_bins, time_frames)
-        return phs_spec
-
     def collate_fn(self, batch):
         features, labels, names = zip(*batch)
 
